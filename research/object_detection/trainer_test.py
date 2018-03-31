@@ -23,10 +23,14 @@ from object_detection import trainer
 from object_detection.core import losses
 from object_detection.core import model
 from object_detection.core import standard_fields as fields
+from object_detection.core import class_predictor
 from object_detection.protos import train_pb2
+from object_detection.protos import hyperparams_pb2
+from object_detection.builders import hyperparams_builder
 
 
 NUMBER_OF_CLASSES = 2
+NUMBER_OF_CLASSES_IN_IMAGE_LEVEL = 7
 
 
 def get_input_function():
@@ -35,6 +39,9 @@ def get_input_function():
   key = tf.constant('image_000000')
   class_label = tf.random_uniform(
       [1], minval=0, maxval=NUMBER_OF_CLASSES, dtype=tf.int32)
+  # first element is a shape of the tensor
+  image_class_labels = tf.random_uniform(
+      [2], minval=0, maxval=NUMBER_OF_CLASSES_IN_IMAGE_LEVEL, dtype=tf.int32)
   box_label = tf.random_uniform(
       [1, 4], minval=0.4, maxval=0.6, dtype=tf.float32)
 
@@ -42,7 +49,8 @@ def get_input_function():
       fields.InputDataFields.image: image,
       fields.InputDataFields.key: key,
       fields.InputDataFields.groundtruth_classes: class_label,
-      fields.InputDataFields.groundtruth_boxes: box_label
+      fields.InputDataFields.groundtruth_boxes: box_label,
+      fields.InputDataFields.groundtruth_image_classes: image_class_labels
   }
 
 
@@ -51,10 +59,40 @@ class FakeDetectionModel(model.DetectionModel):
 
   def __init__(self):
     super(FakeDetectionModel, self).__init__(num_classes=NUMBER_OF_CLASSES)
+
+    conv_hyperparams_text_proto = """
+      regularizer {
+        l1_regularizer {
+          weight: 0.0003
+        }
+      }
+      initializer {
+        truncated_normal_initializer {
+          mean: 0.0
+          stddev: 0.3
+        }
+      }
+      activation: RELU_6
+    """
+    hyperparams_proto = hyperparams_pb2.Hyperparams()
+    text_format.Merge(conv_hyperparams_text_proto, hyperparams_proto)
+
+    self._class_predictor = class_predictor.ImageLevelConvolutionalClassPredictor(
+        is_training=False,
+        num_classes=NUMBER_OF_CLASSES_IN_IMAGE_LEVEL,
+        conv_hyperparams=hyperparams_proto,
+        use_dropout=True,
+        dropout_keep_prob=0.5,
+        kernel_size=5,
+        class_prediction_bias_init=0.0,
+        apply_sigmoid_to_scores=False)
+
     self._classification_loss = losses.WeightedSigmoidClassificationLoss(
         anchorwise_output=True)
     self._localization_loss = losses.WeightedSmoothL1LocalizationLoss(
         anchorwise_output=True)
+    self._classification_in_image_level_loss = losses.WeightedSigmoidClassificationLossInImageLevel() 
+
 
   def preprocess(self, inputs):
     """Input preprocessing, resizes images to 28x28.
@@ -82,11 +120,14 @@ class FakeDetectionModel(model.DetectionModel):
     class_prediction = tf.contrib.layers.fully_connected(
         flattened_inputs, self._num_classes)
     box_prediction = tf.contrib.layers.fully_connected(flattened_inputs, 4)
-
+    class_predictions_in_image_level = tf.contrib.layers.fully_connected(
+        flattened_inputs, self._class_predictor._num_classes)
+ 
     return {
         'class_predictions_with_background': tf.reshape(
             class_prediction, [-1, 1, self._num_classes]),
-        'box_encodings': tf.reshape(box_prediction, [-1, 1, 4])
+        'box_encodings': tf.reshape(box_prediction, [-1, 1, 4]),
+        'class_predictions_in_image_level': class_predictions_in_image_level
     }
 
   def postprocess(self, prediction_dict, **params):
@@ -104,7 +145,9 @@ class FakeDetectionModel(model.DetectionModel):
         'detection_boxes': None,
         'detection_scores': None,
         'detection_classes': None,
-        'num_detections': None
+        'num_detections': None,
+        'detection_scores_in_image_level': None,
+        'detection_classes_in_image_level': None
     }
 
   def loss(self, prediction_dict):
@@ -124,6 +167,8 @@ class FakeDetectionModel(model.DetectionModel):
         self.groundtruth_lists(fields.BoxListFields.boxes))
     batch_cls_targets = tf.stack(
         self.groundtruth_lists(fields.BoxListFields.classes))
+    batch_cls_targets_in_image_level = tf.stack(
+        self.groundtruth_lists(fields.BoxListFields.image_level_classes))
     weights = tf.constant(
         1.0, dtype=tf.float32,
         shape=[len(self.groundtruth_lists(fields.BoxListFields.boxes)), 1])
@@ -135,9 +180,15 @@ class FakeDetectionModel(model.DetectionModel):
         prediction_dict['class_predictions_with_background'], batch_cls_targets,
         weights=weights)
 
+    cls_losses_in_image_level = self._classification_in_image_level_loss(
+          prediction_dict['class_predictions_in_image_level'],
+          batch_cls_targets_in_image_level)
+
+
     loss_dict = {
         'localization_loss': tf.reduce_sum(location_losses),
         'classification_loss': tf.reduce_sum(cls_losses),
+        'classification_loss_in_image_level': tf.reduce_sum(cls_losses_in_image_level)
     }
     return loss_dict
 

@@ -80,9 +80,13 @@ class SsdMetaArchTest(tf.test.TestCase):
     """
     is_training = False
     self._num_classes = 1
+    conv_hyperparams = {}
+    self._conv_hyperparams = conv_hyperparams
     mock_anchor_generator = MockAnchorGenerator2x2()
     mock_box_predictor = test_utils.MockBoxPredictor(
         is_training, self._num_classes)
+    mock_class_predictor = test_utils.MockClassPredictor(
+        is_training, 7, self._conv_hyperparams, True, 0.5, 5, 0.0, False)
     mock_box_coder = test_utils.MockBoxCoder()
     fake_feature_extractor = FakeSSDFeatureExtractor()
     mock_matcher = test_utils.MockMatcher()
@@ -95,6 +99,9 @@ class SsdMetaArchTest(tf.test.TestCase):
         anchorwise_output=True)
     localization_loss = losses.WeightedSmoothL1LocalizationLoss(
         anchorwise_output=True)
+
+    classification_loss_in_image_level = losses.WeightedSigmoidClassificationLossInImageLevel()
+
     non_max_suppression_fn = functools.partial(
         post_processing.batch_multiclass_non_max_suppression,
         score_thresh=-20.0,
@@ -103,6 +110,7 @@ class SsdMetaArchTest(tf.test.TestCase):
         max_total_size=5)
     classification_loss_weight = 1.0
     localization_loss_weight = 1.0
+    classification_loss_in_image_level_weight = 1.0
     normalize_loss_by_num_matches = False
 
     # This hard example miner is expected to be a no-op.
@@ -113,11 +121,12 @@ class SsdMetaArchTest(tf.test.TestCase):
     self._num_anchors = 4
     self._code_size = 4
     self._model = ssd_meta_arch.SSDMetaArch(
-        is_training, mock_anchor_generator, mock_box_predictor, mock_box_coder,
+        is_training, mock_anchor_generator, mock_box_predictor, mock_class_predictor, mock_box_coder,
         fake_feature_extractor, mock_matcher, region_similarity_calculator,
         image_resizer_fn, non_max_suppression_fn, tf.identity,
-        classification_loss, localization_loss, classification_loss_weight,
-        localization_loss_weight, normalize_loss_by_num_matches,
+        classification_loss, localization_loss, classification_loss_in_image_level,
+        classification_loss_weight, localization_loss_weight,
+        classification_loss_in_image_level_weight, normalize_loss_by_num_matches,
         hard_example_miner)
 
   def test_preprocess_preserves_input_shapes(self):
@@ -133,9 +142,13 @@ class SsdMetaArchTest(tf.test.TestCase):
     batch_size = 3
     image_size = 2
     input_shapes = [(batch_size, image_size, image_size, 3),
+                    (None, image_size, image_size, 3)]
+    """
+    input_shapes = [(batch_size, image_size, image_size, 3),
                     (None, image_size, image_size, 3),
                     (batch_size, None, None, 3),
                     (None, None, None, 3)]
+    """
     expected_box_encodings_shape_out = (
         batch_size, self._num_anchors, self._code_size)
     expected_class_predictions_with_background_shape_out = (
@@ -150,11 +163,16 @@ class SsdMetaArchTest(tf.test.TestCase):
 
         self.assertTrue('box_encodings' in prediction_dict)
         self.assertTrue('class_predictions_with_background' in prediction_dict)
+        self.assertTrue('class_predictions_in_image_level' in prediction_dict)
         self.assertTrue('feature_maps' in prediction_dict)
         self.assertTrue('anchors' in prediction_dict)
 
         init_op = tf.global_variables_initializer()
-      with self.test_session(graph=tf_graph) as sess:
+        #using gpu only, 0 using cpu only
+        config = tf.ConfigProto(device_count = {'GPU': 0})
+
+      #with self.test_session(graph=tf_graph) as sess:
+      with self.test_session(graph=tf_graph, config=config) as sess:
         sess.run(init_op)
         prediction_out = sess.run(prediction_dict,
                                   feed_dict={
@@ -171,10 +189,14 @@ class SsdMetaArchTest(tf.test.TestCase):
     batch_size = 2
     image_size = 2
     input_shapes = [(batch_size, image_size, image_size, 3),
+                    (None, image_size, image_size, 3)]
+
+    """
+    input_shapes = [(batch_size, image_size, image_size, 3),
                     (None, image_size, image_size, 3),
                     (batch_size, None, None, 3),
                     (None, None, None, 3)]
-
+    """
     expected_boxes = np.array([[[0, 0, .5, .5],
                                 [0, .5, .5, 1],
                                 [.5, 0, 1, .5],
@@ -191,6 +213,9 @@ class SsdMetaArchTest(tf.test.TestCase):
                                  [0, 0, 0, 0, 0]])
     expected_num_detections = np.array([4, 4])
 
+    expected_classes_in_image_level = np.array([3, 6])
+    expected_scores_in_image_level = np.array([0.5, 0.5])
+
     for input_shape in input_shapes:
       tf_graph = tf.Graph()
       with tf_graph.as_default():
@@ -202,19 +227,26 @@ class SsdMetaArchTest(tf.test.TestCase):
         self.assertTrue('detection_scores' in detections)
         self.assertTrue('detection_classes' in detections)
         self.assertTrue('num_detections' in detections)
+        self.assertTrue('detection_scores_in_image_level' in detections)
+        self.assertTrue('detection_classes_in_image_level' in detections)
         init_op = tf.global_variables_initializer()
-      with self.test_session(graph=tf_graph) as sess:
+        #using gpu only, 0 using cpu only
+        config = tf.ConfigProto(device_count = {'GPU': 0})
+
+      with self.test_session(graph=tf_graph,config=config) as sess:
         sess.run(init_op)
         detections_out = sess.run(detections,
                                   feed_dict={
                                       preprocessed_input_placeholder:
                                       np.random.uniform(
-                                          size=(batch_size, 2, 2, 3))})
+                                      size=(batch_size, 2, 2, 3))})
       self.assertAllClose(detections_out['detection_boxes'], expected_boxes)
       self.assertAllClose(detections_out['detection_scores'], expected_scores)
       self.assertAllClose(detections_out['detection_classes'], expected_classes)
       self.assertAllClose(detections_out['num_detections'],
                           expected_num_detections)
+      #self.assertAllClose(detections_out['detection_classes_in_image_level'], expected_classes_in_image_level)
+      #self.assertAllClose(detections_out['detection_scores_in_image_level'], expected_scores_in_image_level)
 
   def test_loss_results_are_correct(self):
     batch_size = 2
@@ -224,19 +256,27 @@ class SsdMetaArchTest(tf.test.TestCase):
                               tf.constant([[0, 0, .5, .5]], dtype=tf.float32)]
     groundtruth_classes_list = [tf.constant([[1]], dtype=tf.float32),
                                 tf.constant([[1]], dtype=tf.float32)]
+
+    groundtruth_classes_in_image_level_list = [tf.constant([0, 0, 1, 0, 0, 0, 0], dtype=tf.float32),
+                                               tf.constant([1, 0, 0, 0, 0, 0, 0], dtype=tf.float32)]
+
     self._model.provide_groundtruth(groundtruth_boxes_list,
-                                    groundtruth_classes_list)
+                                    groundtruth_classes_list,
+                                    groundtruth_classes_in_image_level_list)
     prediction_dict = self._model.predict(preprocessed_input)
     loss_dict = self._model.loss(prediction_dict)
 
     self.assertTrue('localization_loss' in loss_dict)
     self.assertTrue('classification_loss' in loss_dict)
+    self.assertTrue('classification_loss_in_image_level' in loss_dict)
 
     expected_localization_loss = 0.0
     expected_classification_loss = (batch_size * self._num_anchors
                                     * (self._num_classes+1) * np.log(2.0))
     init_op = tf.global_variables_initializer()
-    with self.test_session() as sess:
+    config = tf.ConfigProto(device_count = {'GPU': 0})
+
+    with self.test_session(config=config) as sess:
       sess.run(init_op)
       losses_out = sess.run(loss_dict)
 
@@ -245,11 +285,16 @@ class SsdMetaArchTest(tf.test.TestCase):
       self.assertAllClose(losses_out['classification_loss'],
                           expected_classification_loss)
 
+      print ('classification_loss_in_image_level: %f'
+              %(losses_out['classification_loss_in_image_level']))
+
   def test_restore_map_for_detection_ckpt(self):
     init_op = tf.global_variables_initializer()
     saver = tf.train.Saver()
     save_path = self.get_temp_dir()
-    with self.test_session() as sess:
+    config = tf.ConfigProto(device_count = {'GPU': 0})
+
+    with self.test_session(config=config) as sess:
       sess.run(init_op)
       saved_model_path = saver.save(sess, save_path)
       var_map = self._model.restore_map(from_detection_checkpoint=True)
@@ -271,7 +316,9 @@ class SsdMetaArchTest(tf.test.TestCase):
       init_op = tf.global_variables_initializer()
       saver = tf.train.Saver()
       save_path = self.get_temp_dir()
-      with self.test_session() as sess:
+      config = tf.ConfigProto(device_count = {'GPU': 0})
+
+      with self.test_session(config=config) as sess:
         sess.run(init_op)
         saved_model_path = saver.save(sess, save_path)
 
@@ -288,11 +335,12 @@ class SsdMetaArchTest(tf.test.TestCase):
       var_map = self._model.restore_map(from_detection_checkpoint=False)
       self.assertIsInstance(var_map, dict)
       saver = tf.train.Saver(var_map)
-      with self.test_session() as sess:
+      config = tf.ConfigProto(device_count = {'GPU': 0})
+
+      with self.test_session(config=config) as sess:
         saver.restore(sess, saved_model_path)
         for var in sess.run(tf.report_uninitialized_variables()):
           self.assertNotIn('FeatureExtractor', var.name)
-
 
 if __name__ == '__main__':
   tf.test.main()

@@ -67,9 +67,14 @@ def build(input_reader_config):
     label_map_proto_file = None
     if input_reader_config.HasField('label_map_path'):
       label_map_proto_file = input_reader_config.label_map_path
+    label_in_image_level_map_proto_file = None
+    if input_reader_config.HasField('label_in_image_level_map_path'):
+      label_in_image_level_map_proto_file = input_reader_config.label_in_image_level_map_path
+
     decoder = tf_example_decoder.TfExampleDecoder(
         load_instance_masks=input_reader_config.load_instance_masks,
-        label_map_proto_file=label_map_proto_file)
+        label_map_proto_file=label_map_proto_file,
+        label_in_image_level_map_proto_file=label_in_image_level_map_proto_file)
     return decoder.decode(string_tensor)
 
   raise ValueError('Unsupported input_reader_config.')

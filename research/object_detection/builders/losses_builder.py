@@ -31,8 +31,10 @@ def build(loss_config):
   Returns:
     classification_loss: Classification loss object.
     localization_loss: Localization loss object.
+    classification_in_image_level_loss: Image-level Classification loss object.
     classification_weight: Classification loss weight.
     localization_weight: Localization loss weight.
+    classification_in_image_level_weight: Image-level Classification loss weight.
     hard_example_miner: Hard example miner object.
 
   Raises:
@@ -42,8 +44,11 @@ def build(loss_config):
       loss_config.classification_loss)
   localization_loss = _build_localization_loss(
       loss_config.localization_loss)
+  classification_in_image_level_loss = _build_classification_in_image_level_loss(
+      loss_config.classification_in_image_level_loss)
   classification_weight = loss_config.classification_weight
   localization_weight = loss_config.localization_weight
+  classification_in_image_level_weight = loss_config.classification_in_image_level_weight
   hard_example_miner = None
   if loss_config.HasField('hard_example_miner'):
     if (loss_config.classification_loss.WhichOneof('classification_loss') ==
@@ -54,9 +59,9 @@ def build(loss_config):
         loss_config.hard_example_miner,
         classification_weight,
         localization_weight)
-  return (classification_loss, localization_loss,
-          classification_weight,
-          localization_weight, hard_example_miner)
+  return (classification_loss, localization_loss, classification_in_image_level_loss,
+          classification_weight, localization_weight,
+          classification_in_image_level_weight, hard_example_miner)
 
 
 def build_hard_example_miner(config,
@@ -207,5 +212,32 @@ def _build_classification_loss(loss_config):
         alpha=config.alpha,
         bootstrap_type=('hard' if config.hard_bootstrap else 'soft'),
         anchorwise_output=config.anchorwise_output)
+
+  raise ValueError('Empty loss config.')
+
+def _build_classification_in_image_level_loss(loss_config):
+  """Builds a classification loss based on the loss config.
+
+  Args:
+    loss_config: A losses_pb2.ClassificationLoss object.
+
+  Returns:
+    Loss based on the config.
+
+  Raises:
+    ValueError: On invalid loss_config.
+  """
+  if not isinstance(loss_config, losses_pb2.ClassificationLossInImageLevel):
+    raise ValueError('loss_config not of type losses_pb2.ClassificationLossInImageLevel.')
+
+  loss_type = loss_config.WhichOneof('classification_in_image_level_loss')
+
+  if loss_type == 'weighted_sigmoid':
+    config = loss_config.weighted_sigmoid
+    return losses.WeightedSigmoidClassificationLossInImageLevel()
+
+  if loss_type == 'weighted_softmax':
+    config = loss_config.weighted_softmax
+    return losses.WeightedSoftmaxClassificationLossInImageLevel()
 
   raise ValueError('Empty loss config.')

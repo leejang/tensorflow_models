@@ -208,6 +208,7 @@ class DetectionModel(object):
   def provide_groundtruth(self,
                           groundtruth_boxes_list,
                           groundtruth_classes_list,
+                          groundtruth_classes_in_image_level_list,
                           groundtruth_masks_list=None,
                           groundtruth_keypoints_list=None):
     """Provide groundtruth tensors.
@@ -234,6 +235,9 @@ class DetectionModel(object):
     self._groundtruth_lists[fields.BoxListFields.boxes] = groundtruth_boxes_list
     self._groundtruth_lists[
         fields.BoxListFields.classes] = groundtruth_classes_list
+    self._groundtruth_lists[
+        fields.BoxListFields.image_level_classes] = groundtruth_classes_in_image_level_list
+
     if groundtruth_masks_list:
       self._groundtruth_lists[
           fields.BoxListFields.masks] = groundtruth_masks_list

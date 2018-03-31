@@ -17,6 +17,7 @@
 from object_detection.builders import anchor_generator_builder
 from object_detection.builders import box_coder_builder
 from object_detection.builders import box_predictor_builder
+from object_detection.builders import class_predictor_builder
 from object_detection.builders import hyperparams_builder
 from object_detection.builders import image_resizer_builder
 from object_detection.builders import losses_builder
@@ -24,6 +25,7 @@ from object_detection.builders import matcher_builder
 from object_detection.builders import post_processing_builder
 from object_detection.builders import region_similarity_calculator_builder as sim_calc
 from object_detection.core import box_predictor
+from object_detection.core import class_predictor
 from object_detection.meta_architectures import faster_rcnn_meta_arch
 from object_detection.meta_architectures import rfcn_meta_arch
 from object_detection.meta_architectures import ssd_meta_arch
@@ -145,13 +147,16 @@ def _build_ssd_model(ssd_config, is_training):
   ssd_box_predictor = box_predictor_builder.build(hyperparams_builder.build,
                                                   ssd_config.box_predictor,
                                                   is_training, num_classes)
+  ssd_class_predictor = class_predictor_builder.build(hyperparams_builder.build,
+                                                  ssd_config.class_predictor,
+                                                  is_training)
   anchor_generator = anchor_generator_builder.build(
       ssd_config.anchor_generator)
   image_resizer_fn = image_resizer_builder.build(ssd_config.image_resizer)
   non_max_suppression_fn, score_conversion_fn = post_processing_builder.build(
       ssd_config.post_processing)
-  (classification_loss, localization_loss, classification_weight,
-   localization_weight,
+  (classification_loss, localization_loss, classification_in_image_level_loss,
+   classification_weight, localization_weight, classification_in_image_level_weight,
    hard_example_miner) = losses_builder.build(ssd_config.loss)
   normalize_loss_by_num_matches = ssd_config.normalize_loss_by_num_matches
 
@@ -159,6 +164,7 @@ def _build_ssd_model(ssd_config, is_training):
       is_training,
       anchor_generator,
       ssd_box_predictor,
+      ssd_class_predictor,
       box_coder,
       feature_extractor,
       matcher,
@@ -168,8 +174,10 @@ def _build_ssd_model(ssd_config, is_training):
       score_conversion_fn,
       classification_loss,
       localization_loss,
+      classification_in_image_level_loss,
       classification_weight,
       localization_weight,
+      classification_in_image_level_weight,
       normalize_loss_by_num_matches,
       hard_example_miner)
 

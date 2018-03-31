@@ -12,14 +12,20 @@ message Loss {
   // Classification loss to use.
   optional ClassificationLoss classification_loss = 2;
 
-  // If not left to default, applies hard example mining.
-  optional HardExampleMiner hard_example_miner = 3;
+  // Classification loss to use.
+  optional ClassificationLossInImageLevel classification_in_image_level_loss = 3;
 
   // Classification loss weight.
   optional float classification_weight = 4 [default=1.0];
 
   // Localization loss weight.
   optional float localization_weight = 5 [default=1.0];
+
+  // Classification loss weight.
+  optional float classification_in_image_level_weight = 6 [default=1.0];
+
+  // If not left to default, applies hard example mining.
+  optional HardExampleMiner hard_example_miner = 7;
 }
 
 // Configuration for bounding box localization loss function.
@@ -95,6 +101,22 @@ message BootstrappedSigmoidClassificationLoss {
 
   // Output loss per anchor.
   optional bool anchorwise_output = 3 [default=false];
+}
+
+// Configuration for class prediction loss function.
+message ClassificationLossInImageLevel {
+  oneof classification_in_image_level_loss {
+    WeightedSigmoidClassificationLossInImageLevel weighted_sigmoid = 1;
+    WeightedSoftmaxClassificationLossInImageLevel weighted_softmax = 2;
+  }
+}
+
+// Classification loss using a sigmoid function over class predictions.
+message WeightedSigmoidClassificationLossInImageLevel {
+}
+
+// Classification loss using a sigmoid function over class predictions.
+message WeightedSoftmaxClassificationLossInImageLevel {
 }
 
 // Configuation for hard example miner.

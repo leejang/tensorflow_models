@@ -342,6 +342,92 @@ class WeightedSoftmaxClassificationLoss(Loss):
     return tf.reduce_sum(per_row_cross_ent * tf.reshape(weights, [-1]))
 
 
+class WeightedSigmoidClassificationLossInImageLevel(Loss):
+  """Sigmoid cross entropy classification loss in image level function."""
+
+  def __init__(self, anchorwise_output=False):
+    """Constructor.
+
+    Args:
+      anchorwise_output: Outputs loss per anchor. (default False)
+
+    """
+    self._anchorwise_output = anchorwise_output
+
+  def _compute_loss(self,
+                    prediction_tensor,
+                    target_tensor):
+
+    """Compute loss function.
+
+    Args:
+      prediction_tensor: A float tensor of shape [batch_size, num_anchors,
+        num_classes] representing the predicted logits for each class
+      target_tensor: A float tensor of shape [batch_size, num_anchors,
+        num_classes] representing one-hot encoded classification targets
+
+    Returns:
+      loss: a (scalar) tensor representing the value of the loss function
+            or a float tensor of shape [batch_size, num_anchors]
+    """
+
+    """
+
+    print_prediction = tf.Print(prediction_tensor, [prediction_tensor], "predction_tensor: ", summarize=4)
+    print_target = tf.Print(target_tensor, [target_tensor], "target_tensor: ", summarize=4)
+
+    print_prediction = tf.nn.sigmoid(print_prediction)
+
+    per_entry_cross_ent = (tf.nn.sigmoid_cross_entropy_with_logits(
+        labels=print_target, logits=print_prediction))
+    """
+   
+    print("pre", prediction_tensor.get_shape())
+    print("tar", target_tensor.get_shape())
+
+    prediction_tensor = tf.nn.sigmoid(prediction_tensor)
+
+    per_entry_cross_ent = (tf.nn.sigmoid_cross_entropy_with_logits(
+        labels=target_tensor, logits=prediction_tensor))
+
+    return tf.reduce_sum(per_entry_cross_ent)
+
+class WeightedSoftmaxClassificationLossInImageLevel(Loss):
+  """Sigmoid cross entropy classification loss in image level function."""
+
+  def __init__(self, anchorwise_output=False):
+    """Constructor.
+
+    Args:
+      anchorwise_output: Outputs loss per anchor. (default False)
+
+    """
+    self._anchorwise_output = anchorwise_output
+
+  def _compute_loss(self,
+                    prediction_tensor,
+                    target_tensor):
+
+    """Compute loss function.
+
+    Args:
+      prediction_tensor: A float tensor of shape [batch_size, num_anchors,
+        num_classes] representing the predicted logits for each class
+      target_tensor: A float tensor of shape [batch_size, num_anchors,
+        num_classes] representing one-hot encoded classification targets
+
+    Returns:
+      loss: a (scalar) tensor representing the value of the loss function
+            or a float tensor of shape [batch_size, num_anchors]
+    """
+
+    prediction_tensor = tf.nn.softmax(prediction_tensor)
+
+    per_entry_cross_ent = (tf.nn.softmax_cross_entropy_with_logits(
+        labels=target_tensor, logits=prediction_tensor))
+
+    return tf.reduce_sum(per_entry_cross_ent)
+
 class BootstrappedSigmoidClassificationLoss(Loss):
   """Bootstrapped sigmoid cross entropy classification loss function.
 

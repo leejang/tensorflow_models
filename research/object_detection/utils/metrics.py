@@ -17,7 +17,7 @@
 from __future__ import division
 
 import numpy as np
-
+import tensorflow as tf
 
 def compute_precision_recall(scores, labels, num_gt):
   """Compute precision and recall.
@@ -53,6 +53,8 @@ def compute_precision_recall(scores, labels, num_gt):
 
   if num_gt == 0:
     return None, None
+
+  #print ("labels", labels)
 
   sorted_indices = np.argsort(scores)
   sorted_indices = sorted_indices[::-1]
@@ -142,3 +144,29 @@ def compute_cor_loc(num_gt_imgs_per_class,
       num_gt_imgs_per_class == 0,
       np.nan,
       num_images_correctly_detected_per_class / num_gt_imgs_per_class)
+
+def compute_accuracy(predictions, labels):
+
+  print ("predictions in compute_accuracy", predictions)
+  print ("labels in compute_accuracy", labels)
+
+  predction = np.array(predictions)
+  labels = np.array(labels)
+
+  accuracy = (predictions == labels).mean()
+
+  print ("accuracy in compute_accuracy", accuracy)
+
+  """
+  predictions = util_ops.padded_one_hot_encoding(indices=predictions, depth=4, left_pad=0)
+  labels = util_ops.padded_one_hot_encoding(indices=labels, depth=4, left_pad=0)
+
+
+  correct_prediction = tf.equal(predictions, labels)
+
+  all_labels_true = tf.reduce_min(tf.cast(correct_prediction, tf.float32), 1)
+
+  accuracy = tf.reduce_mean(all_labels_true)
+  """
+
+  return accuracy

@@ -85,12 +85,14 @@ def create_input_queue(batch_size_per_clone, create_tensor_dict_fn,
   return input_queue
 
 
-def get_inputs(input_queue, num_classes, merge_multiple_label_boxes=False):
+#def get_inputs(input_queue, num_classes, merge_multiple_label_boxes=False):
+def get_inputs(input_queue, num_classes, num_classes_in_image_level, merge_multiple_label_boxes=False):
   """Dequeues batch and constructs inputs to object detection model.
 
   Args:
     input_queue: BatchQueue object holding enqueued tensor_dicts.
     num_classes: Number of classes.
+    num_classes_in_image_level: Number of classes in image level.
     merge_multiple_label_boxes: Whether to merge boxes with multiple labels
       or not. Defaults to false. Merged boxes are represented with a single
       box and a k-hot encoding of the multiple labels associated with the
@@ -121,18 +123,39 @@ def get_inputs(input_queue, num_classes, merge_multiple_label_boxes=False):
     classes_gt = tf.cast(read_data[fields.InputDataFields.groundtruth_classes],
                          tf.int32)
     classes_gt -= label_id_offset
+    classes_in_image_level_gt = tf.cast(read_data[fields.InputDataFields.groundtruth_image_classes],
+                         tf.int32)
+
+    # image-level class does not have background class
+    # thus, id starts from 1
+    classes_in_image_level_gt -= label_id_offset
+
     if merge_multiple_label_boxes:
       location_gt, classes_gt, _ = util_ops.merge_boxes_with_multiple_labels(
           location_gt, classes_gt, num_classes)
     else:
       classes_gt = util_ops.padded_one_hot_encoding(
           indices=classes_gt, depth=num_classes, left_pad=0)
+
+      """
+      classes_in_image_level_gt = tf.Print(classes_in_image_level_gt,
+                                           [classes_in_image_level_gt],
+                                           "classes_in_image_level_gt: ")
+      """
+
+      # multi-label classfication, so we need k-hot encoding
+      classes_in_image_level_gt = util_ops.padded_one_hot_encoding(
+          indices=classes_in_image_level_gt, depth=num_classes_in_image_level, left_pad=0)
+      classes_in_image_level_gt = tf.reduce_sum(classes_in_image_level_gt, 0)
+
     masks_gt = read_data.get(fields.InputDataFields.groundtruth_instance_masks)
     keypoints_gt = read_data.get(fields.InputDataFields.groundtruth_keypoints)
     if (merge_multiple_label_boxes and (
         masks_gt is not None or keypoints_gt is not None)):
       raise NotImplementedError('Multi-label support is only for boxes.')
-    return image, key, location_gt, classes_gt, masks_gt, keypoints_gt
+    #return image, key, location_gt, classes_gt, masks_gt, keypoints_gt
+
+    return image, key, location_gt, classes_gt, classes_in_image_level_gt, masks_gt, keypoints_gt
 
   return zip(*map(extract_images_and_targets, read_data_list))
 
@@ -146,10 +169,11 @@ def _create_losses(input_queue, create_model_fn, train_config):
     train_config: a train_pb2.TrainConfig protobuf.
   """
   detection_model = create_model_fn()
-  (images, _, groundtruth_boxes_list, groundtruth_classes_list,
+  (images, _, groundtruth_boxes_list, groundtruth_classes_list, groundtruth_classes_in_image_level_list,
    groundtruth_masks_list, groundtruth_keypoints_list) = get_inputs(
        input_queue,
        detection_model.num_classes,
+       detection_model._class_predictor._num_classes,
        train_config.merge_multiple_label_boxes)
   images = [detection_model.preprocess(image) for image in images]
   images = tf.concat(images, 0)
@@ -160,6 +184,7 @@ def _create_losses(input_queue, create_model_fn, train_config):
 
   detection_model.provide_groundtruth(groundtruth_boxes_list,
                                       groundtruth_classes_list,
+                                      groundtruth_classes_in_image_level_list,
                                       groundtruth_masks_list,
                                       groundtruth_keypoints_list)
   prediction_dict = detection_model.predict(images)
@@ -294,6 +319,7 @@ def train(create_tensor_dict_fn, create_model_fn, train_config, master, task,
     for model_var in slim.get_model_variables():
       global_summaries.add(tf.summary.histogram(model_var.op.name, model_var))
     for loss_tensor in tf.losses.get_losses():
+      #print loss_tensor.op.name
       global_summaries.add(tf.summary.scalar(loss_tensor.op.name, loss_tensor))
     global_summaries.add(
         tf.summary.scalar('TotalLoss', tf.losses.get_total_loss()))
@@ -310,6 +336,9 @@ def train(create_tensor_dict_fn, create_model_fn, train_config, master, task,
     # Soft placement allows placing on CPU ops without GPU implementation.
     session_config = tf.ConfigProto(allow_soft_placement=True,
                                     log_device_placement=False)
+
+    session_config.gpu_options.per_process_gpu_memory_fraction = 0.5
+    session_config.gpu_options.visible_device_list = "2"
 
     # Save checkpoints regularly.
     keep_checkpoint_every_n_hours = train_config.keep_checkpoint_every_n_hours

@@ -24,6 +24,7 @@ import tensorflow as tf
 
 from object_detection.core import box_list
 from object_detection.core import box_predictor as bpredictor
+from object_detection.core import class_predictor as cpredictor
 from object_detection.core import model
 from object_detection.core import standard_fields as fields
 from object_detection.core import target_assigner
@@ -106,6 +107,7 @@ class SSDMetaArch(model.DetectionModel):
                is_training,
                anchor_generator,
                box_predictor,
+               class_predictor,
                box_coder,
                feature_extractor,
                matcher,
@@ -115,8 +117,10 @@ class SSDMetaArch(model.DetectionModel):
                score_conversion_fn,
                classification_loss,
                localization_loss,
+               classification_in_image_level_loss,
                classification_loss_weight,
                localization_loss_weight,
+               classification_in_image_level_loss_weight,
                normalize_loss_by_num_matches,
                hard_example_miner,
                add_summaries=True):
@@ -160,6 +164,7 @@ class SSDMetaArch(model.DetectionModel):
         should be added to tensorflow graph.
     """
     super(SSDMetaArch, self).__init__(num_classes=box_predictor.num_classes)
+
     self._is_training = is_training
 
     # Needed for fine-tuning from classification checkpoints whose
@@ -168,6 +173,7 @@ class SSDMetaArch(model.DetectionModel):
 
     self._anchor_generator = anchor_generator
     self._box_predictor = box_predictor
+    self._class_predictor = class_predictor
 
     self._box_coder = box_coder
     self._feature_extractor = feature_extractor
@@ -177,6 +183,7 @@ class SSDMetaArch(model.DetectionModel):
     # TODO: handle agnostic mode and positive/negative class weights
     unmatched_cls_target = None
     unmatched_cls_target = tf.constant([1] + self.num_classes * [0], tf.float32)
+
     self._target_assigner = target_assigner.TargetAssigner(
         self._region_similarity_calculator,
         self._matcher,
@@ -187,8 +194,10 @@ class SSDMetaArch(model.DetectionModel):
 
     self._classification_loss = classification_loss
     self._localization_loss = localization_loss
+    self._classification_in_image_level_loss = classification_in_image_level_loss
     self._classification_loss_weight = classification_loss_weight
     self._localization_loss_weight = localization_loss_weight
+    self._classification_in_image_level_loss_weight = classification_in_image_level_loss_weight
     self._normalize_loss_by_num_matches = normalize_loss_by_num_matches
     self._hard_example_miner = hard_example_miner
 
@@ -270,13 +279,42 @@ class SSDMetaArch(model.DetectionModel):
         im_width=image_shape[2])
     (box_encodings, class_predictions_with_background
     ) = self._add_box_predictions_to_feature_maps(feature_maps)
+    class_predictions_in_image_level = self._add_class_predictions_to_feature_maps(feature_maps)
     predictions_dict = {
         'box_encodings': box_encodings,
         'class_predictions_with_background': class_predictions_with_background,
+        'class_predictions_in_image_level': class_predictions_in_image_level,
         'feature_maps': feature_maps,
         'anchors': self._anchors.get()
     }
     return predictions_dict
+
+  def _add_class_predictions_to_feature_maps(self, feature_maps):
+    """Add class predictors (image-level) if using multi-task-labels
+       Args:
+        feature_maps: multi-resolution feature maps
+       Returns:
+        cls_predictions_in_image_level: [batch_size, num_classes]
+       RuntimeError: if the number of feature maps extracted via the
+            extract_features method does not match the length of the
+            num_anchors_per_locations list that was passed to the constructor.
+    """
+
+    cls_predictions_in_image_level_list = []
+    for idx, feature_map in enumerate(feature_maps):
+      class_predictor_scope = 'ClassPredictor_{}'.format(idx)
+      #print ('idx = %d' % (idx))
+      class_predictions = self._class_predictor.predict(feature_map,
+                                                    class_predictor_scope)
+      cls_predictions_in_image_level = class_predictions[
+          cpredictor.IMAGE_LEVEL_CLASS_PREDICTIONS]
+
+      cls_predictions_in_image_level_list.append(
+          cls_predictions_in_image_level)
+
+    class_predictions_in_image_level = tf.concat(cls_predictions_in_image_level_list, 1)
+
+    return cls_predictions_in_image_level
 
   def _add_box_predictions_to_feature_maps(self, feature_maps):
     """Adds box predictors to each feature map and returns concatenated results.
@@ -390,11 +428,13 @@ class SSDMetaArch(model.DetectionModel):
         `class_predictions_with_background` fields.
     """
     if ('box_encodings' not in prediction_dict or
+        'class_predictions_in_image_level' not in prediction_dict or
         'class_predictions_with_background' not in prediction_dict):
       raise ValueError('prediction_dict does not contain expected entries.')
     with tf.name_scope('Postprocessor'):
       box_encodings = prediction_dict['box_encodings']
       class_predictions = prediction_dict['class_predictions_with_background']
+      class_predictions_in_image_level = prediction_dict['class_predictions_in_image_level']
       detection_boxes, detection_keypoints = self._batch_decode(box_encodings)
       detection_boxes = tf.expand_dims(detection_boxes, axis=2)
 
@@ -403,6 +443,22 @@ class SSDMetaArch(model.DetectionModel):
                                                       [-1, -1, -1])
       detection_scores = self._score_conversion_fn(
           class_predictions_without_background)
+      """
+      class_predictions_in_image_level = tf.Print(class_predictions_in_image_level,
+                                                 [class_predictions_in_image_level],
+                                                  message="class_predictions_in_image_level: ")
+      """
+
+      #class_scores_in_image_level = slim.fully_connected(class_predictions_in_image_level, self._class_predictor.num_classes)
+      class_scores_in_image_level = self._score_conversion_fn(class_predictions_in_image_level)
+      #print ("class_scores_in_image_level_shape", class_scores_in_image_level.get_shape())
+
+      nmsed_scores_in_image_level = tf.reduce_max(class_scores_in_image_level, axis=1)
+      #print ("nmsed_scores_in_image_level", nmsed_scores_in_image_level.get_shape())
+
+      nmsed_classes_in_image_level = tf.argmax(class_scores_in_image_level, axis=1)
+      #print ("nmsed_classesin_image_level", nmsed_classes_in_image_level.get_shape())
+
       clip_window = tf.constant([0, 0, 1, 1], tf.float32)
       additional_fields = None
       if detection_keypoints is not None:
@@ -417,7 +473,10 @@ class SSDMetaArch(model.DetectionModel):
       detection_dict = {'detection_boxes': nmsed_boxes,
                         'detection_scores': nmsed_scores,
                         'detection_classes': nmsed_classes,
-                        'num_detections': tf.to_float(num_detections)}
+                        'num_detections': tf.to_float(num_detections),
+                        'detection_scores_in_image_level': nmsed_scores_in_image_level,
+                        'detection_classes_in_image_level': nmsed_classes_in_image_level
+                       }
       if (nmsed_additional_fields is not None and
           fields.BoxListFields.keypoints in nmsed_additional_fields):
         detection_dict['detection_keypoints'] = nmsed_additional_fields[
@@ -450,9 +509,10 @@ class SSDMetaArch(model.DetectionModel):
       if self.groundtruth_has_field(fields.BoxListFields.keypoints):
         keypoints = self.groundtruth_lists(fields.BoxListFields.keypoints)
       (batch_cls_targets, batch_cls_weights, batch_reg_targets,
-       batch_reg_weights, match_list) = self._assign_targets(
+       batch_reg_weights, batch_cls_targets_in_image_level, match_list) = self._assign_targets(
            self.groundtruth_lists(fields.BoxListFields.boxes),
            self.groundtruth_lists(fields.BoxListFields.classes),
+           self.groundtruth_lists(fields.BoxListFields.image_level_classes),
            keypoints)
       if self._add_summaries:
         self._summarize_input(
@@ -468,6 +528,9 @@ class SSDMetaArch(model.DetectionModel):
           prediction_dict['class_predictions_with_background'],
           batch_cls_targets,
           weights=batch_cls_weights)
+      cls_losses_in_image_level = self._classification_in_image_level_loss(
+          prediction_dict['class_predictions_in_image_level'],
+          batch_cls_targets_in_image_level)
 
       if self._hard_example_miner:
         (localization_loss, classification_loss) = self._apply_hard_mining(
@@ -483,6 +546,8 @@ class SSDMetaArch(model.DetectionModel):
               flattened_class_ids, flattened_classification_losses)
         localization_loss = tf.reduce_sum(location_losses)
         classification_loss = tf.reduce_sum(cls_losses)
+      
+      classification_loss_in_image_level = tf.reduce_sum(cls_losses_in_image_level)
 
       # Optionally normalize by number of positive matches
       normalizer = tf.constant(1.0, dtype=tf.float32)
@@ -496,9 +561,13 @@ class SSDMetaArch(model.DetectionModel):
         classification_loss = ((self._classification_loss_weight / normalizer) *
                                classification_loss)
 
+      with tf.name_scope('classification_loss_in_image_level'):
+        classification_loss_in_image_level = (self._classification_in_image_level_loss_weight *
+                               classification_loss_in_image_level)
       loss_dict = {
           'localization_loss': localization_loss,
-          'classification_loss': classification_loss
+          'classification_loss': classification_loss,
+          'classification_loss_in_image_level': classification_loss_in_image_level
       }
     return loss_dict
 
@@ -515,7 +584,7 @@ class SSDMetaArch(model.DetectionModel):
                                               'NegativeAnchorLossCDF')
 
   def _assign_targets(self, groundtruth_boxes_list, groundtruth_classes_list,
-                      groundtruth_keypoints_list=None):
+                      groundtruth_classes_in_image_level_list, groundtruth_keypoints_list=None):
     """Assign groundtruth targets.
 
     Adds a background class to each one-hot encoding of groundtruth classes
@@ -530,6 +599,8 @@ class SSDMetaArch(model.DetectionModel):
       groundtruth_classes_list: a list of 2-D one-hot (or k-hot) tensors of
         shape [num_boxes, num_classes] containing the class targets with the 0th
         index assumed to map to the first non-background class.
+      groundtruth_classes_image_level_list: a list of 2-D one-hot (or k-hot) tensors of
+        shape [num_classes] containing the class targets
       groundtruth_keypoints_list: (optional) a list of 3-D tensors of shape
         [num_boxes, num_keypoints, 2]
 
@@ -558,7 +629,8 @@ class SSDMetaArch(model.DetectionModel):
         boxlist.add_field(fields.BoxListFields.keypoints, keypoints)
     return target_assigner.batch_assign_targets(
         self._target_assigner, self.anchors, groundtruth_boxlists,
-        groundtruth_classes_with_background_list)
+        groundtruth_classes_with_background_list,
+        groundtruth_classes_in_image_level_list)
 
   def _summarize_input(self, groundtruth_boxes_list, match_list):
     """Creates tensorflow summaries for the input boxes and anchors.

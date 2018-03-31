@@ -21,6 +21,7 @@ from object_detection.core import anchor_generator
 from object_detection.core import box_coder
 from object_detection.core import box_list
 from object_detection.core import box_predictor
+from object_detection.core import class_predictor
 from object_detection.core import matcher
 from object_detection.utils import shape_utils
 
@@ -60,6 +61,32 @@ class MockBoxPredictor(box_predictor.BoxPredictor):
             box_predictor.CLASS_PREDICTIONS_WITH_BACKGROUND:
             class_predictions_with_background}
 
+class MockClassPredictor(class_predictor.ImageLevelConvolutionalClassPredictor):
+  """Simple class predictor that ignores inputs and outputs all zeros."""
+
+  def __init__(self,
+               is_training,
+               num_classes,
+               conv_hyperparams,
+               use_dropout,
+               dropout_keep_prob,
+               kernel_size,
+               class_prediction_bias_init,
+               apply_sigmoid_to_scores):
+    super(MockClassPredictor, self).__init__(is_training, num_classes, conv_hyperparams,
+                                             use_dropout, dropout_keep_prob, kernel_size,
+                                             class_prediction_bias_init, apply_sigmoid_to_scores)
+
+  def _predict(self, image_features, num_predictions_per_location):
+    combined_feature_shape = shape_utils.combined_static_and_dynamic_shape(
+        image_features)
+    batch_size = combined_feature_shape[0]
+    #num_anchors = (combined_feature_shape[1] * combined_feature_shape[2])
+    zero = tf.reduce_sum(0 * image_features)
+    class_predictions = zero + tf.zeros(
+        (batch_size, self.num_classes), dtype=tf.float32)
+    return {class_predictor.IMAGE_LEVEL_CLASS_PREDICTIONS:
+            class_predictions}
 
 class MockAnchorGenerator(anchor_generator.AnchorGenerator):
   """Mock anchor generator."""

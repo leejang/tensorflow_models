@@ -1,0 +1,38 @@
+syntax = "proto2";
+
+package object_detection.protos;
+
+import "object_detection/protos/hyperparams.proto";
+
+
+// Configuration proto for class predictor
+message ClassPredictor {
+    optional int32 num_classes = 1;
+    oneof class_predictor_oneof {
+        ImageLevelConvolutionalClassPredictor image_level_convolutional_class_predictor = 2;
+    }
+}
+
+// Configuration proto for Image Level Convolutional Class predictor.
+message ImageLevelConvolutionalClassPredictor {
+
+  // Hyperparameters for convolution ops used in the box predictor.
+  optional Hyperparams conv_hyperparams = 1;
+
+  // Whether to use dropout for class prediction.
+  optional bool use_dropout = 2 [default = true];
+
+  // Keep probability for dropout
+  optional float dropout_keep_probability = 3 [default = 0.8];
+
+  // Size of final convolution kernel. If the spatial resolution of the feature
+  // map is smaller than the kernel size, then the kernel size is set to
+  // min(feature_width, feature_height).
+  optional int32 kernel_size = 4 [default = 1];
+
+  optional float class_prediction_bias_init = 5 [default = 0.0];
+
+  // Whether to apply sigmoid to the output of class predictions.
+  // TODO: Do we need this since we have a post processing module.?
+  optional bool apply_sigmoid_to_scores = 6 [default = false];
+}

@@ -10,6 +10,7 @@ import "object_detection/protos/matcher.proto";
 import "object_detection/protos/losses.proto";
 import "object_detection/protos/post_processing.proto";
 import "object_detection/protos/region_similarity_calculator.proto";
+import "object_detection/protos/class_predictor.proto";
 
 // Configuration for Single Shot Detection (SSD) models.
 message Ssd {
@@ -35,18 +36,21 @@ message Ssd {
   // Box predictor to attach to the features.
   optional BoxPredictor box_predictor = 7;
 
+  // Class predictor for image level classfication.
+  optional ClassPredictor class_predictor = 8;
+
   // Anchor generator to compute anchors.
-  optional AnchorGenerator anchor_generator = 8;
+  optional AnchorGenerator anchor_generator = 9;
 
   // Post processing to apply on the predictions.
-  optional PostProcessing post_processing = 9;
+  optional PostProcessing post_processing = 10;
 
   // Whether to normalize the loss by number of groundtruth boxes that match to
   // the anchors.
-  optional bool normalize_loss_by_num_matches = 10 [default=true];
+  optional bool normalize_loss_by_num_matches = 11 [default=true];
 
   // Loss configuration for training.
-  optional Loss loss = 11;
+  optional Loss loss = 12;
 }
 
 

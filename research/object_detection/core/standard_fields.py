@@ -105,8 +105,9 @@ class DetectionResultFields(object):
   detection_boundaries = 'detection_boundaries'
   detection_keypoints = 'detection_keypoints'
   num_detections = 'num_detections'
-
-
+  detection_scores_in_image_level = 'detection_scores_in_image_level'
+  detection_classes_in_image_level = 'detection_classes_in_image_level'
+ 
 class BoxListFields(object):
   """Naming conventions for BoxLists.
 
@@ -123,6 +124,9 @@ class BoxListFields(object):
   """
   boxes = 'boxes'
   classes = 'classes'
+  # To do: need to move in the future
+  # since image-level classes are not related to bounding boxes
+  image_level_classes = 'image_level_classes'
   scores = 'scores'
   weights = 'weights'
   objectness = 'objectness'
@@ -203,3 +207,5 @@ class TfExampleFields(object):
   detection_bbox_ymax = 'image/detection/bbox/ymax'
   detection_bbox_xmax = 'image/detection/bbox/xmax'
   detection_score = 'image/detection/score'
+  image_level_class_text = 'image/image_level/class/text'
+  image_level_class_label = 'image/image_level/class/label'

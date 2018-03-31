@@ -228,7 +228,14 @@ def _run_checkpoint_once(tensor_dict,
   """
   if save_graph and not save_graph_dir:
     raise ValueError('`save_graph_dir` must be defined.')
-  sess = tf.Session(master, graph=tf.get_default_graph())
+ # Soft placement allows placing on CPU ops without GPU implementation.
+  session_config = tf.ConfigProto(allow_soft_placement=True,
+                                  log_device_placement=False)
+  session_config.gpu_options.per_process_gpu_memory_fraction = 0.5
+  session_config.gpu_options.visible_device_list = "3"
+
+  #sess = tf.Session(master, graph=tf.get_default_graph())
+  sess = tf.Session(master, graph=tf.get_default_graph(), config=session_config)
   sess.run(tf.global_variables_initializer())
   sess.run(tf.local_variables_initializer())
   sess.run(tf.tables_initializer())
@@ -414,6 +421,7 @@ def result_dict_for_single_example(image,
       'groundtruth_boxes': [num_boxes, 4] float32 tensor of boxes, in
         normalized coordinates.
       'groundtruth_classes': [num_boxes] int64 tensor of 1-indexed classes.
+      'groundtruth_image_classes': [1] int64 tensor of 1-indexed classes.
       'groundtruth_area': [num_boxes] float32 tensor of bbox area. (Optional)
       'groundtruth_is_crowd': [num_boxes] int64 tensor. (Optional)
       'groundtruth_difficult': [num_boxes] int64 tensor. (Optional)
@@ -512,5 +520,10 @@ def result_dict_for_single_example(image,
       groundtruth_classes = groundtruth[input_data_fields.groundtruth_classes]
       groundtruth_classes = tf.ones_like(groundtruth_classes, dtype=tf.int64)
       output_dict[input_data_fields.groundtruth_classes] = groundtruth_classes
+
+  output_dict[detection_fields.detection_scores_in_image_level] = \
+              detections[detection_fields.detection_scores_in_image_level]
+  output_dict[detection_fields.detection_classes_in_image_level] = \
+              detections[detection_fields.detection_classes_in_image_level]
 
   return output_dict

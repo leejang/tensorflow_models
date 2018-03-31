@@ -391,7 +391,8 @@ def create_target_assigner(reference, stage=None,
 def batch_assign_targets(target_assigner,
                          anchors_batch,
                          gt_box_batch,
-                         gt_class_targets_batch):
+                         gt_class_targets_batch,
+                         gt_class_in_image_level_targets_batch):
   """Batched assignment of classification and regression targets.
 
   Args:
@@ -404,6 +405,8 @@ def batch_assign_targets(target_assigner,
       each tensor has shape [num_gt_boxes_i, classification_target_size] and
       num_gt_boxes_i is the number of boxes in the ith boxlist of
       gt_box_batch.
+    gt_class_in_image_level_targets_batch: a list of tensors with length batch_size, where
+      each tensor has shape [image-level classification_target_size]
 
   Returns:
     batch_cls_targets: a tensor with shape [batch_size, num_anchors,
@@ -451,5 +454,7 @@ def batch_assign_targets(target_assigner,
   batch_cls_weights = tf.stack(cls_weights_list)
   batch_reg_targets = tf.stack(reg_targets_list)
   batch_reg_weights = tf.stack(reg_weights_list)
+  batch_cls_in_image_level_targets = tf.stack(gt_class_in_image_level_targets_batch)
+
   return (batch_cls_targets, batch_cls_weights, batch_reg_targets,
-          batch_reg_weights, match_list)
+          batch_reg_weights, batch_cls_in_image_level_targets, match_list)

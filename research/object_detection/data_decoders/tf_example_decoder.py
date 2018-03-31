@@ -33,12 +33,18 @@ class TfExampleDecoder(data_decoder.DataDecoder):
   def __init__(self,
                load_instance_masks=False,
                label_map_proto_file=None,
+               label_in_image_level_map_proto_file=None,
                use_display_name=False):
     """Constructor sets keys_to_features and items_to_handlers.
 
     Args:
       load_instance_masks: whether or not to load and handle instance masks.
       label_map_proto_file: a file path to a
+        object_detection.protos.StringIntLabelMap proto. If provided, then the
+        mapped IDs of 'image/object/class/text' will take precedence over the
+        existing 'image/object/class/label' ID.  Also, if provided, it is
+        assumed that 'image/object/class/text' will be in the data.
+      label_in_image_level_map_proto_file: a file path to a
         object_detection.protos.StringIntLabelMap proto. If provided, then the
         mapped IDs of 'image/object/class/text' will take precedence over the
         existing 'image/object/class/label' ID.  Also, if provided, it is
@@ -83,6 +89,10 @@ class TfExampleDecoder(data_decoder.DataDecoder):
             tf.VarLenFeature(tf.int64),
         'image/object/group_of':
             tf.VarLenFeature(tf.int64),
+        'image/image_level/class/label':
+            tf.VarLenFeature(tf.int64),
+        'image/image_level/class/text':
+            tf.VarLenFeature(tf.string),
     }
     self.items_to_handlers = {
         fields.InputDataFields.image: slim_example_decoder.Image(
@@ -119,6 +129,10 @@ class TfExampleDecoder(data_decoder.DataDecoder):
     label_handler = slim_example_decoder.Tensor('image/object/class/label')
     self.items_to_handlers[
         fields.InputDataFields.groundtruth_classes] = label_handler
+
+    image_level_label_handler = slim_example_decoder.Tensor('image/image_level/class/label')
+    self.items_to_handlers[
+        fields.InputDataFields.groundtruth_image_classes] = image_level_label_handler
 
   def decode(self, tf_example_string_tensor):
     """Decodes serialized tensorflow example and returns a tensor dictionary.

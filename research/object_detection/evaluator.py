@@ -72,7 +72,9 @@ def _extract_prediction_tensors(model,
         fields.InputDataFields.groundtruth_is_crowd:
             input_dict[fields.InputDataFields.groundtruth_is_crowd],
         fields.InputDataFields.groundtruth_difficult:
-            input_dict[fields.InputDataFields.groundtruth_difficult]
+            input_dict[fields.InputDataFields.groundtruth_difficult],
+        fields.InputDataFields.groundtruth_image_classes:
+            input_dict[fields.InputDataFields.groundtruth_image_classes]
     }
     if fields.InputDataFields.groundtruth_group_of in input_dict:
       groundtruth[fields.InputDataFields.groundtruth_group_of] = (
