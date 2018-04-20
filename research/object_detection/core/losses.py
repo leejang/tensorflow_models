@@ -411,20 +411,53 @@ class WeightedSoftmaxClassificationLossInImageLevel(Loss):
     """Compute loss function.
 
     Args:
-      prediction_tensor: A float tensor of shape [batch_size, num_anchors,
-        num_classes] representing the predicted logits for each class
-      target_tensor: A float tensor of shape [batch_size, num_anchors,
-        num_classes] representing one-hot encoded classification targets
+      prediction_tensor: A float tensor of shape [batch_size, num_classes
+        representing the predicted logits for each class
+      target_tensor: A float tensor of shape [batch_size, num_classes]
+        representing one-hot encoded classification targets
 
     Returns:
       loss: a (scalar) tensor representing the value of the loss function
             or a float tensor of shape [batch_size, num_anchors]
     """
 
+    print("pre", prediction_tensor.get_shape())
+    print("tar", target_tensor.get_shape())
+ 
+    """
+    # without weights for each class
     prediction_tensor = tf.nn.softmax(prediction_tensor)
-
     per_entry_cross_ent = (tf.nn.softmax_cross_entropy_with_logits(
         labels=target_tensor, logits=prediction_tensor))
+    """
+
+    # specify class weights
+    # real ratio from one-hand hanon dataset
+    #class_weights = tf.constant([0.11, 0.85, 0.015, 0.005, 0.005, 0.015])
+    class_weights = tf.constant([[0.11, 0.85, 0.015, 0.005, 0.005, 0.015]])
+    # adhysted weights by experiments
+    #class_weights = tf.constant([0.2, 0.5, 0.09, 0.06, 0.06, 0.09])
+    #class_weights = tf.constant([0.2, 0.4, 0.12, 0.08, 0.12, 0.08])
+
+    #weighted_prediction_tensor = tf.multiply(prediction_tensor, class_weights)
+    #prediction_sum = tf.reduce_sum(prediction_tensor)
+    #weighted_prediction_tensor = weighted_prediction_tensor / prediction_sum
+
+    #per_entry_cross_ent = (tf.nn.softmax_cross_entropy_with_logits(
+        #labels=target_tensor, logits=weighted_prediction_tensor))
+
+    weight_per_label = tf.transpose(tf.matmul(target_tensor,
+                                              tf.transpose(class_weights)))
+
+    per_entry_cross_ent = tf.multiply(weight_per_label,
+                                      tf.nn.softmax_cross_entropy_with_logits(
+                                        labels=target_tensor, logits=prediction_tensor))
+
+    """
+    # for giving different weights for each batch
+    per_entry_cross_ent = (tf.losses.sparse_softmax_cross_entropy(
+        labels=target_tensor, logits=prediction_tensor, weights=class_weights))
+    """
 
     return tf.reduce_sum(per_entry_cross_ent)
 

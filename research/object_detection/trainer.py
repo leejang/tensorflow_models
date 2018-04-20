@@ -64,6 +64,14 @@ def create_input_queue(batch_size_per_clone, create_tensor_dict_fn,
   images = tensor_dict[fields.InputDataFields.image]
   float_images = tf.to_float(images)
   tensor_dict[fields.InputDataFields.image] = float_images
+  
+  # for audio input
+  tensor_dict[fields.InputDataFields.audio] = tf.expand_dims(
+      tensor_dict[fields.InputDataFields.audio], 0)
+
+  audios = tensor_dict[fields.InputDataFields.audio]
+  float_audios = tf.to_float(audios)
+  tensor_dict[fields.InputDataFields.audio] = float_audios
 
   include_instance_masks = (fields.InputDataFields.groundtruth_instance_masks
                             in tensor_dict)
@@ -130,6 +138,9 @@ def get_inputs(input_queue, num_classes, num_classes_in_image_level, merge_multi
     # thus, id starts from 1
     classes_in_image_level_gt -= label_id_offset
 
+    # audio
+    audio = read_data[fields.InputDataFields.audio]
+
     if merge_multiple_label_boxes:
       location_gt, classes_gt, _ = util_ops.merge_boxes_with_multiple_labels(
           location_gt, classes_gt, num_classes)
@@ -155,7 +166,7 @@ def get_inputs(input_queue, num_classes, num_classes_in_image_level, merge_multi
       raise NotImplementedError('Multi-label support is only for boxes.')
     #return image, key, location_gt, classes_gt, masks_gt, keypoints_gt
 
-    return image, key, location_gt, classes_gt, classes_in_image_level_gt, masks_gt, keypoints_gt
+    return image, audio, key, location_gt, classes_gt, classes_in_image_level_gt, masks_gt, keypoints_gt
 
   return zip(*map(extract_images_and_targets, read_data_list))
 
@@ -169,14 +180,16 @@ def _create_losses(input_queue, create_model_fn, train_config):
     train_config: a train_pb2.TrainConfig protobuf.
   """
   detection_model = create_model_fn()
-  (images, _, groundtruth_boxes_list, groundtruth_classes_list, groundtruth_classes_in_image_level_list,
+  (images, audios,  _, groundtruth_boxes_list, groundtruth_classes_list, groundtruth_classes_in_image_level_list,
    groundtruth_masks_list, groundtruth_keypoints_list) = get_inputs(
        input_queue,
        detection_model.num_classes,
        detection_model._class_predictor._num_classes,
        train_config.merge_multiple_label_boxes)
-  images = [detection_model.preprocess(image) for image in images]
+  images = [detection_model.preprocess(image, False) for image in images]
   images = tf.concat(images, 0)
+  audios = [detection_model.preprocess(audio, True) for audio in audios]
+  audios = tf.concat(audios, 0)
   if any(mask is None for mask in groundtruth_masks_list):
     groundtruth_masks_list = None
   if any(keypoints is None for keypoints in groundtruth_keypoints_list):
@@ -187,7 +200,7 @@ def _create_losses(input_queue, create_model_fn, train_config):
                                       groundtruth_classes_in_image_level_list,
                                       groundtruth_masks_list,
                                       groundtruth_keypoints_list)
-  prediction_dict = detection_model.predict(images)
+  prediction_dict = detection_model.predict(images, audios)
 
   losses_dict = detection_model.loss(prediction_dict)
   for loss_tensor in losses_dict.values():
@@ -337,8 +350,8 @@ def train(create_tensor_dict_fn, create_model_fn, train_config, master, task,
     session_config = tf.ConfigProto(allow_soft_placement=True,
                                     log_device_placement=False)
 
-    session_config.gpu_options.per_process_gpu_memory_fraction = 0.5
-    session_config.gpu_options.visible_device_list = "2"
+    session_config.gpu_options.per_process_gpu_memory_fraction = 0.9
+    session_config.gpu_options.visible_device_list = "0"
 
     # Save checkpoints regularly.
     keep_checkpoint_every_n_hours = train_config.keep_checkpoint_every_n_hours

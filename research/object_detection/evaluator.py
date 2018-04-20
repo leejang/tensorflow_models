@@ -56,8 +56,10 @@ def _extract_prediction_tensors(model,
   prefetch_queue = prefetcher.prefetch(input_dict, capacity=500)
   input_dict = prefetch_queue.dequeue()
   original_image = tf.expand_dims(input_dict[fields.InputDataFields.image], 0)
-  preprocessed_image = model.preprocess(tf.to_float(original_image))
-  prediction_dict = model.predict(preprocessed_image)
+  original_audio = tf.expand_dims(input_dict[fields.InputDataFields.audio], 0)
+  preprocessed_image = model.preprocess(tf.to_float(original_image), False)
+  preprocessed_audio = model.preprocess(tf.to_float(original_audio), True)
+  prediction_dict = model.predict(preprocessed_image, preprocessed_audio)
   detections = model.postprocess(prediction_dict)
 
   groundtruth = None

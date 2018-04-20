@@ -79,7 +79,8 @@ class ImageLevelConvolutionalClassPredictor(object):
     self._class_prediction_bias_init = class_prediction_bias_init
     self._apply_sigmoid_to_scores = apply_sigmoid_to_scores
 
-  def predict(self, image_features, class_predictor_scope):
+  #def predict(self, image_features, class_predictor_scope):
+  def predict(self, image_features, audio_features, class_predictor_scope):
     """Computes encoded object locations and corresponding confidences.
 
     Args:
@@ -93,9 +94,15 @@ class ImageLevelConvolutionalClassPredictor(object):
           predictions for the proposals.
     """
 
-    #num_class_slots = self._num_classes + 1
-    num_class_slots = self._num_classes
+    num_class_slots = self._num_classes + 1
+    #num_class_slots = self._num_classes
+    num_hidden_neurons = 256
     net = image_features
+    net = tf.concat([image_features, audio_features], 3)
+
+    print("image_features", image_features.get_shape())
+    print("audio_features", audio_features.get_shape())
+    print("concat_net_features", net.get_shape())
 
     with tf.variable_scope(class_predictor_scope):
         with slim.arg_scope(self._conv_hyperparams), \
@@ -105,29 +112,55 @@ class ImageLevelConvolutionalClassPredictor(object):
              
                 if self._use_dropout:
                     net = slim.dropout(net, keep_prob=self._dropout_keep_prob)
-                
+               
+                """ 
                 image_level_class_predictions = slim.conv2d(
-                    net,  num_class_slots,
-                    [self._kernel_size, self._kernel_size], scope=class_predictor_scope,
+                    net,  num_hidden_neurons,
+                    [self._kernel_size, self._kernel_size],  scope=class_predictor_scope,
+                    biases_initializer=tf.constant_initializer(self._class_prediction_bias_init)
+                    )
+                """
+
+                image_level_class_predictions = slim.conv2d(
+                    net,  num_hidden_neurons,
+                    [self._kernel_size, self._kernel_size], padding="VALID", scope=class_predictor_scope,
                     biases_initializer=tf.constant_initializer(self._class_prediction_bias_init)
                     )
  
                 if self._apply_sigmoid_to_scores:
                     image_level_class_predictions = tf.sigmoid(image_level_class_predictions)
   
-                """
+
                 combined_feature_map_shape = shape_utils.combined_static_and_dynamic_shape(image_features)
 
-                # output shape: [batch_size, feature_map_height * feature_map_width, num_classes]
-                image_level_class_predictions = tf.reshape(
-                    image_level_class_predictions,
-                    tf.stack([combined_feature_map_shape[0],
-                              combined_feature_map_shape[1] *
-                              combined_feature_map_shape[2],
-                              num_class_slots]))
+                """
+                image_level_class_predictions = slim.conv2d(
+                    image_level_class_predictions,  num_hidden_neurons/2,
+                    [2, 2], padding="VALID", biases_initializer=tf.constant_initializer(self._class_prediction_bias_init)
+                    )
+
+                image_level_class_predictions = slim.conv2d(
+                    image_level_class_predictions,  num_class_slots,
+                    [1, 1], padding="VALID", biases_initializer=tf.constant_initializer(self._class_prediction_bias_init)
+                    )
+                """
+
+                print("kernel_size", self._kernel_size)
+                # batch x 1 x 1 x 2048
+                print("image_level_class_predictions", image_level_class_predictions.get_shape())
+                #print("audio_features", audio_features.get_shape())
 
                 # flatten to use fc layer
                 image_level_class_predictions = slim.flatten(image_level_class_predictions)
+                #audio_features = slim.flatten(audio_features)
+
+                #concat_features = tf.concat([image_level_class_predictions, audio_features], 1)
+
+                #print("concat_features", concat_features.get_shape())
+
+                #image_level_class_predictions = slim.fully_connected(concat_features,
+                #                                                      num_hidden_neurons)
+
                 # fully connected
                 image_level_class_predictions = slim.fully_connected(image_level_class_predictions,
                                                                       num_class_slots)
@@ -137,18 +170,6 @@ class ImageLevelConvolutionalClassPredictor(object):
                     tf.stack([combined_feature_map_shape[0],
                               num_class_slots]))
 
-                """
-                combined_feature_map_shape = shape_utils.combined_static_and_dynamic_shape(image_features)
-
-                # flatten to use fc layer
-                image_level_class_predictions = slim.flatten(image_level_class_predictions)
-                # fully connected
-                image_level_class_predictions = slim.fully_connected(image_level_class_predictions,
-                                                                      num_class_slots)
-                # re-shape
-                image_level_class_predictions = tf.reshape(
-                    image_level_class_predictions,
-                    tf.stack([combined_feature_map_shape[0],
-                              num_class_slots]))
+                print("image_level_class_predictions", image_level_class_predictions.get_shape())
 
     return {IMAGE_LEVEL_CLASS_PREDICTIONS:image_level_class_predictions}

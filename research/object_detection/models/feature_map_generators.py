@@ -46,6 +46,7 @@ def get_depth_fn(depth_multiplier, min_depth):
 
 def multi_resolution_feature_maps(feature_map_layout, depth_multiplier,
                                   min_depth, insert_1x1_conv, image_features):
+#                                  audio_features):
   """Generates multi resolution feature maps from input image features.
 
   Generates multi-scale feature maps for detection as in the SSD papers by
@@ -110,6 +111,16 @@ def multi_resolution_feature_maps(feature_map_layout, depth_multiplier,
     ValueError: if the generated layer does not have the same resolution
       as specified.
   """
+  #audio_shape = audio_features['conv1'].get_shape()
+  #audio_tensor = tf.reshape(audio_features['conv1'], [audio_shape[0], 1, 1, audio_shape[1]])
+
+  #print("audio_features", audio_features['fc4'].get_shape())
+
+  #audio_shape = audio_features['fc4'].get_shape()
+  #audio_tensor = tf.reshape(audio_features['fc4'], [audio_shape[0], 1, 1, audio_shape[1]])
+  #audio_tensor = tf.reshape(audio_features['fc4'], [16, 1, 1, 64])
+  #print("test_tensor", test_tensor.get_shape())
+
   depth_fn = get_depth_fn(depth_multiplier, min_depth)
 
   feature_map_keys = []
@@ -125,6 +136,14 @@ def multi_resolution_feature_maps(feature_map_layout, depth_multiplier,
       conv_kernel_size = feature_map_layout['conv_kernel_size'][index]
     if from_layer:
       feature_map = image_features[from_layer]
+      #print("feature_map", feature_map.get_shape())
+      """
+      shape = feature_map.get_shape()
+      extended_audio = tf.tile(audio_tensor,
+                              [1, shape[1],shape[2], 1])
+      feature_map = tf.concat([feature_map, extended_audio], 3)      
+      print("feature_map", feature_map.get_shape())
+      """
       base_from_layer = from_layer
       feature_map_keys.append(from_layer)
     else:

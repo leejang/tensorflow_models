@@ -217,7 +217,7 @@ class ObjectDetectionEvaluator(DetectionEvaluator):
         standard_fields.DetectionResultFields.detection_scores_in_image_level]
     detection_image_classes = detections_dict[
         standard_fields.DetectionResultFields.detection_classes_in_image_level]
-    #detection_image_classes -= self._label_id_offset
+    detection_image_classes -= self._label_id_offset
     self._evaluation.add_single_detected_image_info(
         image_id,
         detections_dict[standard_fields.DetectionResultFields.detection_boxes],
@@ -239,20 +239,17 @@ class ObjectDetectionEvaluator(DetectionEvaluator):
       2. per_category_ap: category specific results with keys of the form
         'PerformanceByCategory/mAP@<matching_iou_threshold>IOU/category'.
     """
-    (per_class_ap, mean_ap, _, _, per_class_corloc, mean_corloc, accuracy) = (
-        self._evaluation.evaluate())
+    (per_class_ap, mean_ap, _, _, per_class_corloc, mean_corloc, img_cls_accuracy, total_accuracy) = (self._evaluation.evaluate())
     pascal_metrics = {
         self._metric_prefix +
-        'Precision/mAP@{}IOU'.format(self._matching_iou_threshold):
-            mean_ap
-    }
-
-    pascal_metrics = {
+        'Precision/mAP@{}IOU'.format(self._matching_iou_threshold):  mean_ap,
         self._metric_prefix +
-        'Accuracy': accuracy
+        'Img-levl classification Accuracy': img_cls_accuracy,
+        self._metric_prefix +
+        'Total Accuracy': total_accuracy
     }
 
-    print ("Accuracy in final evl fn", accuracy)
+    print ("Total Accuracy in final evl fn", total_accuracy)
 
     if self._evaluate_corlocs:
       pascal_metrics[self._metric_prefix + 'Precision/meanCorLoc@{}IOU'.format(
@@ -399,8 +396,9 @@ class OpenImagesDetectionEvaluator(ObjectDetectionEvaluator):
 
 ObjectDetectionEvalMetrics = collections.namedtuple(
     'ObjectDetectionEvalMetrics', [
-        'average_precisions', 'mean_ap', 'precisions', 'recalls', 'corlocs',
-        'mean_corloc', 'accuracy'
+    
+    'average_precisions', 'mean_ap', 'precisions', 'recalls', 'corlocs',
+        'mean_corloc', 'img_cls_accuracy', 'total_accuracy'
     ])
 
 
@@ -444,6 +442,8 @@ class ObjectDetectionEvaluation(object):
     self.detected_image_scores = []
     self.detected_image_class_labels = []
 
+    # eval result for class in bounding boxes
+    self.eval_result_in_box_classifcation = []
 
   def clear_detections(self):
     self.detection_keys = {}
@@ -571,10 +571,25 @@ class ObjectDetectionEvaluation(object):
     (self.num_images_correctly_detected_per_class
     ) += is_class_correctly_detected_in_image
 
+
     #self.detected_image_scores = detected_image_scores 
     #self.detected_image_class_labels = detected_image_class_labels
     self.detected_image_scores.append(detected_image_scores.tolist())
     self.detected_image_class_labels.append(detected_image_class_labels.tolist())
+
+    #print (detected_class_labels)
+    #print (groundtruth_class_labels)
+    #print (groundtruth_class_labels.tolist())
+    #print (len(groundtruth_class_labels))
+    #print (is_class_correctly_detected_in_image)
+    #print (np.sum(is_class_correctly_detected_in_image))
+
+    if (len(groundtruth_class_labels) == np.sum(is_class_correctly_detected_in_image)):
+      self.eval_result_in_box_classifcation.append(1)
+    else:
+      self.eval_result_in_box_classifcation.append(0)
+
+    #print (self.eval_result_in_box_classifcation)
 
   def _update_ground_truth_statistics(self, groundtruth_class_labels,
                                       groundtruth_is_difficult_list,
@@ -659,9 +674,15 @@ class ObjectDetectionEvaluation(object):
     mean_corloc = np.nanmean(self.corloc_per_class)
 
     # compute image-level classification accuracy
+    img_cls_accuracy, total_accuracy = metrics.compute_accuracy(self.detected_image_class_labels,
+                                        self.groundtruth_image_class_labels,
+                                        self.eval_result_in_box_classifcation)
+    """
+    # compute image-level classification accuracy
     accuracy = metrics.compute_accuracy(self.detected_image_class_labels,
                                         self.groundtruth_image_class_labels)
+    """
 
     return ObjectDetectionEvalMetrics(
         self.average_precision_per_class, mean_ap, self.precisions_per_class,
-        self.recalls_per_class, self.corloc_per_class, mean_corloc, accuracy)
+        self.recalls_per_class, self.corloc_per_class, mean_corloc, img_cls_accuracy, total_accuracy)

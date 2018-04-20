@@ -93,10 +93,24 @@ class TfExampleDecoder(data_decoder.DataDecoder):
             tf.VarLenFeature(tf.int64),
         'image/image_level/class/text':
             tf.VarLenFeature(tf.string),
+        'audio/encoded':
+            tf.FixedLenFeature((), tf.string, default_value=''),
+#            tf.VarLenFeature(tf.float32),
+        'audio/format':
+#            tf.FixedLenFeature((), tf.string, default_value='npy'),
+#            tf.FixedLenFeature((), tf.string, default_value='raw'),
+#            tf.FixedLenFeature((), tf.string, default_value='png'),
+            tf.FixedLenFeature((), tf.string, default_value='jpg'),
+        'audio/height':
+            tf.FixedLenFeature((), tf.int64, 1),
+        'audio/width':
+            tf.FixedLenFeature((), tf.int64, 1),
     }
     self.items_to_handlers = {
         fields.InputDataFields.image: slim_example_decoder.Image(
             image_key='image/encoded', format_key='image/format', channels=3),
+        fields.InputDataFields.audio: slim_example_decoder.Image(
+            image_key='audio/encoded', format_key='audio/format', channels=3),
         fields.InputDataFields.source_id: (
             slim_example_decoder.Tensor('image/source_id')),
         fields.InputDataFields.key: (
@@ -175,6 +189,7 @@ class TfExampleDecoder(data_decoder.DataDecoder):
     is_crowd = fields.InputDataFields.groundtruth_is_crowd
     tensor_dict[is_crowd] = tf.cast(tensor_dict[is_crowd], dtype=tf.bool)
     tensor_dict[fields.InputDataFields.image].set_shape([None, None, 3])
+    #tensor_dict[fields.InputDataFields.audio].set_shape([None, None, 3])
     return tensor_dict
 
   def _reshape_instance_masks(self, keys_to_tensors):

@@ -30,6 +30,7 @@ from object_detection.core import standard_fields as fields
 from object_detection.core import target_assigner
 from object_detection.utils import shape_utils
 from object_detection.utils import visualization_utils
+from object_detection.core import preprocessor
 
 slim = tf.contrib.slim
 
@@ -216,7 +217,7 @@ class SSDMetaArch(model.DetectionModel):
       raise RuntimeError('anchors should be a BoxList object, but is not.')
     return self._anchors
 
-  def preprocess(self, inputs):
+  def preprocess(self, inputs, audio_flag=False):
     """Feature-extractor specific preprocessing.
 
     See base class.
@@ -236,12 +237,26 @@ class SSDMetaArch(model.DetectionModel):
     with tf.name_scope('Preprocessor'):
       # TODO: revisit whether to always use batch size as the number of parallel
       # iterations vs allow for dynamic batching.
-      resized_inputs = tf.map_fn(self._image_resizer_fn,
-                                 elems=inputs,
-                                 dtype=tf.float32)
-      return self._feature_extractor.preprocess(resized_inputs)
 
-  def predict(self, preprocessed_inputs):
+      if (audio_flag == False):
+        resized_inputs = tf.map_fn(self._image_resizer_fn,
+                                   elems=inputs,
+                                   dtype=tf.float32)
+        return self._feature_extractor.preprocess(resized_inputs, normalized=False)
+      else:
+        print("audio shape in preprocess", inputs.get_shape())
+        # no resize
+        # TO DO: hard coding for just coverting
+        # dynamic shape of tensor to the static shape
+        # need to be modified later
+        resized_inputs = preprocessor.resize_image(inputs,
+                                                   new_height=20,
+                                                   new_width=9)
+
+        return self._feature_extractor.preprocess(resized_inputs, normalized=False)
+
+
+  def predict(self, preprocessed_inputs, preprocessed_second_inputs):
     """Predicts unpostprocessed tensors from input tensor.
 
     This function takes an input batch of images and runs it through the forward
@@ -269,17 +284,25 @@ class SSDMetaArch(model.DetectionModel):
     """
     with tf.variable_scope(None, self._extract_features_scope,
                            [preprocessed_inputs]):
-      feature_maps = self._feature_extractor.extract_features(
-          preprocessed_inputs)
+      #feature_maps = self._feature_extractor.extract_features(
+      feature_maps, audio_features = self._feature_extractor.extract_features(
+          preprocessed_inputs, preprocessed_second_inputs)
     feature_map_spatial_dims = self._get_feature_map_spatial_dims(feature_maps)
     image_shape = tf.shape(preprocessed_inputs)
     self._anchors = self._anchor_generator.generate(
         feature_map_spatial_dims,
         im_height=image_shape[1],
         im_width=image_shape[2])
+    #(box_encodings, class_predictions_with_background
+    #) = self._add_box_predictions_to_feature_maps(feature_maps)
+
     (box_encodings, class_predictions_with_background
-    ) = self._add_box_predictions_to_feature_maps(feature_maps)
-    class_predictions_in_image_level = self._add_class_predictions_to_feature_maps(feature_maps)
+    ) = self._add_box_predictions_to_feature_maps(feature_maps, audio_features)
+
+    #class_predictions_in_image_level = self._add_class_predictions_to_feature_maps(feature_maps)
+    class_predictions_in_image_level = self._add_class_predictions_to_feature_maps(
+                                       feature_maps, audio_features)
+
     predictions_dict = {
         'box_encodings': box_encodings,
         'class_predictions_with_background': class_predictions_with_background,
@@ -289,7 +312,8 @@ class SSDMetaArch(model.DetectionModel):
     }
     return predictions_dict
 
-  def _add_class_predictions_to_feature_maps(self, feature_maps):
+  #def _add_class_predictions_to_feature_maps(self, feature_maps):
+  def _add_class_predictions_to_feature_maps(self, feature_maps, audio_features):
     """Add class predictors (image-level) if using multi-task-labels
        Args:
         feature_maps: multi-resolution feature maps
@@ -300,6 +324,36 @@ class SSDMetaArch(model.DetectionModel):
             num_anchors_per_locations list that was passed to the constructor.
     """
 
+    #combined_shape = shape_utils.combined_static_and_dynamic_shape(feature_maps[0])
+    #batch_size = combined_shape[0]
+    #print("batch_size", batch_size)
+
+    # pickt the one of feature map
+    # currently use [batch, 8, 8, 2048]
+    #feature_map = feature_maps[2];
+    # from multi-resolution feature maps
+    # currently use [batch, 4, 4, 512]
+    #feature_map = feature_maps[3];
+    # batch x 2 x 2 x 256
+    #feature_map = feature_maps[4];
+    # batch x 1 x 1 x 128
+    feature_map = feature_maps[5];
+
+    class_predictor_scope = 'ClassPredictor'
+
+    class_predictions = self._class_predictor.predict(feature_map,
+                                                    audio_features,
+                                                    class_predictor_scope)
+    cls_predictions_in_image_level = class_predictions[
+        cpredictor.IMAGE_LEVEL_CLASS_PREDICTIONS]
+
+    """
+    class_predictions = self._class_predictor.predict(feature_map,
+                                                    class_predictor_scope)
+    """
+
+
+    """
     cls_predictions_in_image_level_list = []
     for idx, feature_map in enumerate(feature_maps):
       class_predictor_scope = 'ClassPredictor_{}'.format(idx)
@@ -311,12 +365,21 @@ class SSDMetaArch(model.DetectionModel):
 
       cls_predictions_in_image_level_list.append(
           cls_predictions_in_image_level)
+    """
 
-    class_predictions_in_image_level = tf.concat(cls_predictions_in_image_level_list, 1)
+    #class_predictions_in_image_level = tf.concat(cls_predictions_in_image_level_list, 0)
+    #class_predictions_in_image_level = tf.accumulate_n(cls_predictions_in_image_level_list)
+    #class_predictions_in_image_level = tf.div(class_predictions_in_image_level,
+    #                                          len(cls_predictions_in_image_level_list))
+    #class_predictions_in_image_level = tf.reduce_mean(class_predictions_in_image_level, 0, keepdims=True)
 
+    #print("class_predictions_in_image_level", class_predictions_in_image_level.get_shape())
+    
     return cls_predictions_in_image_level
+    #return class_predictions_in_image_level
 
-  def _add_box_predictions_to_feature_maps(self, feature_maps):
+  #def _add_box_predictions_to_feature_maps(self, feature_maps):
+  def _add_box_predictions_to_feature_maps(self, feature_maps, audio_features):
     """Adds box predictors to each feature map and returns concatenated results.
 
     Args:
@@ -343,14 +406,22 @@ class SSDMetaArch(model.DetectionModel):
     if len(feature_maps) != len(num_anchors_per_location_list):
       raise RuntimeError('the number of feature maps must match the '
                          'length of self.anchors.NumAnchorsPerLocation().')
+
     box_encodings_list = []
     cls_predictions_with_background_list = []
     for idx, (feature_map, num_anchors_per_location
              ) in enumerate(zip(feature_maps, num_anchors_per_location_list)):
       box_predictor_scope = 'BoxPredictor_{}'.format(idx)
+      """
       box_predictions = self._box_predictor.predict(feature_map,
                                                     num_anchors_per_location,
                                                     box_predictor_scope)
+      """
+      box_predictions = self._box_predictor.predict(feature_map,
+                                                    audio_features,
+                                                    num_anchors_per_location,
+                                                    box_predictor_scope)
+
       box_encodings = box_predictions[bpredictor.BOX_ENCODINGS]
       cls_predictions_with_background = box_predictions[
           bpredictor.CLASS_PREDICTIONS_WITH_BACKGROUND]
@@ -599,7 +670,7 @@ class SSDMetaArch(model.DetectionModel):
       groundtruth_classes_list: a list of 2-D one-hot (or k-hot) tensors of
         shape [num_boxes, num_classes] containing the class targets with the 0th
         index assumed to map to the first non-background class.
-      groundtruth_classes_image_level_list: a list of 2-D one-hot (or k-hot) tensors of
+      groundtruth_classes_image_level_list: a list of 1-D one-hot (or k-hot) tensors of
         shape [num_classes] containing the class targets
       groundtruth_keypoints_list: (optional) a list of 3-D tensors of shape
         [num_boxes, num_keypoints, 2]
@@ -623,6 +694,12 @@ class SSDMetaArch(model.DetectionModel):
         tf.pad(one_hot_encoding, [[0, 0], [1, 0]], mode='CONSTANT')
         for one_hot_encoding in groundtruth_classes_list
     ]
+
+    groundtruth_classes_in_image_level_list = [
+        tf.pad(one_hot_encoding, [[1, 0]], mode='CONSTANT')
+        for one_hot_encoding in groundtruth_classes_in_image_level_list
+    ]
+
     if groundtruth_keypoints_list is not None:
       for boxlist, keypoints in zip(
           groundtruth_boxlists, groundtruth_keypoints_list):

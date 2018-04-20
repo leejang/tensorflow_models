@@ -59,6 +59,7 @@ class InputDataFields(object):
     groundtruth_label_scores: groundtruth label scores.
   """
   image = 'image'
+  audio = 'audio'
   original_image = 'original_image'
   key = 'key'
   source_id = 'source_id'
@@ -209,3 +210,6 @@ class TfExampleFields(object):
   detection_score = 'image/detection/score'
   image_level_class_text = 'image/image_level/class/text'
   image_level_class_label = 'image/image_level/class/label'
+  audio_encoded = 'audio/encoded'
+  audio_height = 'audio/height'
+  audio_width = 'audio/width'

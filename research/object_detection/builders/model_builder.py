@@ -36,6 +36,7 @@ from object_detection.models import faster_rcnn_resnet_v1_feature_extractor as f
 from object_detection.models.embedded_ssd_mobilenet_v1_feature_extractor import EmbeddedSSDMobileNetV1FeatureExtractor
 from object_detection.models.ssd_inception_v2_feature_extractor import SSDInceptionV2FeatureExtractor
 from object_detection.models.ssd_inception_v3_feature_extractor import SSDInceptionV3FeatureExtractor
+from object_detection.models.ssd_inception_v3_feature_extractor_two_stream import SSDInceptionV3FeatureExtractorTwoStream
 from object_detection.models.ssd_mobilenet_v1_feature_extractor import SSDMobileNetV1FeatureExtractor
 from object_detection.protos import model_pb2
 
@@ -43,6 +44,7 @@ from object_detection.protos import model_pb2
 SSD_FEATURE_EXTRACTOR_CLASS_MAP = {
     'ssd_inception_v2': SSDInceptionV2FeatureExtractor,
     'ssd_inception_v3': SSDInceptionV3FeatureExtractor,
+    'ssd_inception_v3_two_stream': SSDInceptionV3FeatureExtractorTwoStream,
     'ssd_mobilenet_v1': SSDMobileNetV1FeatureExtractor,
     'embedded_ssd_mobilenet_v1': EmbeddedSSDMobileNetV1FeatureExtractor,
 }

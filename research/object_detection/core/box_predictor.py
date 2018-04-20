@@ -59,7 +59,8 @@ class BoxPredictor(object):
   def num_classes(self):
     return self._num_classes
 
-  def predict(self, image_features, num_predictions_per_location, scope,
+  #def predict(self, image_features, num_predictions_per_location, scope,
+  def predict(self, image_features, audio_features, num_predictions_per_location, scope,
               **params):
     """Computes encoded object locations and corresponding confidences.
 
@@ -88,13 +89,18 @@ class BoxPredictor(object):
           predictions for the proposals.
     """
     with tf.variable_scope(scope):
+      """
       return self._predict(image_features, num_predictions_per_location,
+                           **params)
+      """
+      return self._predict(image_features, audio_features, num_predictions_per_location,
                            **params)
 
   # TODO: num_predictions_per_location could be moved to constructor.
   # This is currently only used by ConvolutionalBoxPredictor.
   @abstractmethod
-  def _predict(self, image_features, num_predictions_per_location, **params):
+  #def _predict(self, image_features, num_predictions_per_location, **params):
+  def _predict(self, image_features, audio_features, num_predictions_per_location, **params):
     """Implementations must override this method.
 
     Args:
@@ -497,7 +503,8 @@ class ConvolutionalBoxPredictor(BoxPredictor):
     self._apply_sigmoid_to_scores = apply_sigmoid_to_scores
     self._class_prediction_bias_init = class_prediction_bias_init
 
-  def _predict(self, image_features, num_predictions_per_location):
+  #def _predict(self, image_features, num_predictions_per_location):
+  def _predict(self, image_features, audio_features, num_predictions_per_location):
     """Computes encoded object locations and corresponding confidences.
 
     Args:
@@ -515,6 +522,7 @@ class ConvolutionalBoxPredictor(BoxPredictor):
           [batch_size, num_anchors, num_classes + 1] representing the class
           predictions for the proposals.
     """
+
     # Add a slot for the background class.
     num_class_slots = self.num_classes + 1
     net = image_features
@@ -537,6 +545,17 @@ class ConvolutionalBoxPredictor(BoxPredictor):
             scope='BoxEncodingPredictor')
         if self._use_dropout:
           net = slim.dropout(net, keep_prob=self._dropout_keep_prob)
+
+        # fusing with audio features    
+        print("before fusion: feature_map", net.get_shape())
+        shape = net.get_shape()
+        extended_audio = tf.tile(audio_features, [1,shape[1],shape[2],1])
+        net = tf.concat([net, extended_audio], 3)
+        print("after fusion: new feature_map", net.get_shape())
+
+        # do 1 x 1 convolution
+        net = slim.conv2d(net, shape[3], [1, 1], scope='fusion')
+
         class_predictions_with_background = slim.conv2d(
             net, num_predictions_per_location * num_class_slots,
             [self._kernel_size, self._kernel_size], scope='ClassPredictor',
@@ -545,6 +564,9 @@ class ConvolutionalBoxPredictor(BoxPredictor):
         if self._apply_sigmoid_to_scores:
           class_predictions_with_background = tf.sigmoid(
               class_predictions_with_background)
+
+    print("num_predictions_per_location", num_predictions_per_location)
+    print("class_predictions_with_background", class_predictions_with_background.get_shape())
 
     combined_feature_map_shape = shape_utils.combined_static_and_dynamic_shape(
         image_features)

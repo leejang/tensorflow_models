@@ -18,6 +18,7 @@ from __future__ import division
 
 import numpy as np
 import tensorflow as tf
+from object_detection.utils import ops as util_ops
 
 def compute_precision_recall(scores, labels, num_gt):
   """Compute precision and recall.
@@ -145,21 +146,40 @@ def compute_cor_loc(num_gt_imgs_per_class,
       np.nan,
       num_images_correctly_detected_per_class / num_gt_imgs_per_class)
 
-def compute_accuracy(predictions, labels):
+def compute_accuracy(predictions, labels, in_box_results):
 
-  print ("predictions in compute_accuracy", predictions)
-  print ("labels in compute_accuracy", labels)
+  # fill [0] in empty labels
+  # which representing "background"
+  for label in labels:
+    if not label:
+      label.append(0)
+
+  #print ("predictions in compute_accuracy", predictions)
+  #print ("labels in compute_accuracy", labels)
 
   predction = np.array(predictions)
   labels = np.array(labels)
+  
+  img_cls_accuracy = (predictions == labels)
 
-  accuracy = (predictions == labels).mean()
+  print ("image-level classification accuracy in compute_accuracy", img_cls_accuracy.mean())
 
-  print ("accuracy in compute_accuracy", accuracy)
+  #print (img_cls_accuracy)
+  #print (in_box_results)
+
+  total_accuracy = np.logical_and(img_cls_accuracy, in_box_results)
+
+  print ("total accuracy in compute_accuracy", total_accuracy.mean())
 
   """
-  predictions = util_ops.padded_one_hot_encoding(indices=predictions, depth=4, left_pad=0)
-  labels = util_ops.padded_one_hot_encoding(indices=labels, depth=4, left_pad=0)
+  predictions = tf.convert_to_tensor(predictions)
+  labels = tf.convert_to_tensor(labels)
+
+  #predictions = util_ops.padded_one_hot_encoding(indices=predictions, depth=5, left_pad=0)
+  #labels = util_ops.padded_one_hot_encoding(indices=labels, depth=5, left_pad=0)
+
+  #print ("predictions in compute_accuracy", predictions)
+  #print ("labels in compute_accuracy", labels)
 
 
   correct_prediction = tf.equal(predictions, labels)
@@ -167,6 +187,30 @@ def compute_accuracy(predictions, labels):
   all_labels_true = tf.reduce_min(tf.cast(correct_prediction, tf.float32), 1)
 
   accuracy = tf.reduce_mean(all_labels_true)
+
+  #print ("accuracy in compute_accuracy", accuracy)
   """
 
+  return img_cls_accuracy.mean(), total_accuracy.mean()
+
+"""
+def compute_accuracy(predictions, labels):
+
+  # fill [0] in empty labels
+  # which representing "background"
+  for label in labels:
+    if not label:
+      label.append(0)
+
+  print ("predictions in compute_accuracy", predictions)
+  print ("labels in compute_accuracy", labels)
+
+  predction = np.array(predictions)
+  labels = np.array(labels)
+  
+  accuracy = (predictions == labels).mean()
+
+  print ("accuracy in compute_accuracy", accuracy)
+
   return accuracy
+"""

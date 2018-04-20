@@ -228,11 +228,12 @@ def _run_checkpoint_once(tensor_dict,
   """
   if save_graph and not save_graph_dir:
     raise ValueError('`save_graph_dir` must be defined.')
- # Soft placement allows placing on CPU ops without GPU implementation.
+  # Soft placement allows placing on CPU ops without GPU implementation.
   session_config = tf.ConfigProto(allow_soft_placement=True,
                                   log_device_placement=False)
-  session_config.gpu_options.per_process_gpu_memory_fraction = 0.5
-  session_config.gpu_options.visible_device_list = "3"
+
+  session_config.gpu_options.per_process_gpu_memory_fraction = 0.9
+  session_config.gpu_options.visible_device_list = "1"
 
   #sess = tf.Session(master, graph=tf.get_default_graph())
   sess = tf.Session(master, graph=tf.get_default_graph(), config=session_config)
