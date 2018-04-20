@@ -79,7 +79,9 @@ def freeze_graph_with_def_protos(
     else:
       logging.info('Graph Rewriter optimizations disabled')
       graph_options = tf.GraphOptions()
-    config = tf.ConfigProto(graph_options=graph_options)
+    #config = tf.ConfigProto(graph_options=graph_options)
+    config = tf.ConfigProto(graph_options=graph_options,
+                            device_count = {'GPU': 0})
     with session.Session(config=config) as sess:
       if input_saver_def:
         saver = saver_lib.Saver(saver_def=input_saver_def)
@@ -130,7 +132,9 @@ def replace_variable_values_with_moving_averages(graph,
   with graph.as_default():
     variable_averages = tf.train.ExponentialMovingAverage(0.0)
     ema_variables_to_restore = variable_averages.variables_to_restore()
-    with tf.Session() as sess:
+    config = tf.ConfigProto(device_count = {'GPU': 0})
+    with session.Session(config=config) as sess:
+    #with tf.Session() as sess:
       read_saver = tf.train.Saver(ema_variables_to_restore)
       read_saver.restore(sess, current_checkpoint_file)
       write_saver = tf.train.Saver()
@@ -263,6 +267,7 @@ def _write_frozen_graph(frozen_graph_path, frozen_graph_def):
 def _write_saved_model(saved_model_path,
                        frozen_graph_def,
                        inputs,
+                       inputs2,
                        outputs):
   """Writes SavedModel to disk.
 
@@ -279,14 +284,17 @@ def _write_saved_model(saved_model_path,
     outputs: A tensor dictionary containing the outputs of a DetectionModel.
   """
   with tf.Graph().as_default():
-    with session.Session() as sess:
+    config = tf.ConfigProto(device_count = {'GPU': 0})
+    #with session.Session() as sess:
+    with session.Session(config=config) as sess:
 
       tf.import_graph_def(frozen_graph_def, name='')
 
       builder = tf.saved_model.builder.SavedModelBuilder(saved_model_path)
 
       tensor_info_inputs = {
-          'inputs': tf.saved_model.utils.build_tensor_info(inputs)}
+          'inputs': tf.saved_model.utils.build_tensor_info(inputs),
+          'inputs2': tf.saved_model.utils.build_tensor_info(inputs2)}
       tensor_info_outputs = {}
       for k, v in outputs.items():
         tensor_info_outputs[k] = tf.saved_model.utils.build_tensor_info(v)
@@ -315,7 +323,9 @@ def _write_graph_and_checkpoint(inference_graph_def,
     node.device = ''
   with tf.Graph().as_default():
     tf.import_graph_def(inference_graph_def, name='')
-    with session.Session() as sess:
+    config = tf.ConfigProto(device_count = {'GPU': 0})
+    #with session.Session() as sess:
+    with session.Session(config=config) as sess:
       saver = saver_lib.Saver(saver_def=input_saver_def,
                               save_relative_paths=True)
       saver.restore(sess, trained_checkpoint_prefix)
@@ -346,11 +356,28 @@ def _export_inference_graph(input_type,
       raise ValueError('Can only specify input shape for `image_tensor` '
                        'inputs.')
     placeholder_args['input_shape'] = input_shape
+
+  """
+  # original form to feed one-stream input
   placeholder_tensor, input_tensors = input_placeholder_fn_map[input_type](
       **placeholder_args)
   inputs = tf.to_float(input_tensors)
   preprocessed_inputs = detection_model.preprocess(inputs)
   output_tensors = detection_model.predict(preprocessed_inputs)
+  """
+  placeholder_tensor, input_tensors = input_placeholder_fn_map[input_type](
+      **placeholder_args)
+  placeholder_tensor2, input_tensors2 = input_placeholder_fn_map[input_type](
+      **placeholder_args)
+  inputs = tf.to_float(input_tensors)
+  inputs2 = tf.to_float(input_tensors2)
+  # video input
+  preprocessed_inputs = detection_model.preprocess(inputs, False)
+  # audio input
+  preprocessed_inputs2 = detection_model.preprocess(inputs2, True)
+  
+  output_tensors = detection_model.predict(preprocessed_inputs, preprocessed_inputs2)
+
   postprocessed_tensors = detection_model.postprocess(output_tensors)
   outputs = _add_output_tensor_nodes(postprocessed_tensors,
                                      output_collection_name)
@@ -392,7 +419,8 @@ def _export_inference_graph(input_type,
       initializer_nodes='')
   _write_frozen_graph(frozen_graph_path, frozen_graph_def)
   _write_saved_model(saved_model_path, frozen_graph_def,
-                     placeholder_tensor, outputs)
+                     placeholder_tensor, placeholder_tensor2,
+                     outputs)
 
 
 def export_inference_graph(input_type,
